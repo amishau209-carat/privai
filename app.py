@@ -1,37 +1,92 @@
 import streamlit as st
 import ollama
+from rag import search, ingest
 
 st.set_page_config(page_title="PrivAI", page_icon="🔒")
 st.title("🔒 PrivAI - Private Local Assistant")
 st.caption("Runs fully on your laptop. No internet, no cloud.")
 
-# Sidebar: pick any model you have pulled with Ollama
-models = [m.model for m in ollama.list().models]
+SYSTEM_PROMPT = (
+    "You are PrivAI, a private assistant running fully offline. "
+    "When context is provided, answer ONLY from that context and cite the "
+    "sources like [1], [2]. If the context does not contain the answer, say "
+    "you could not find it in the documents. Keep answers clear and short."
+)
+
+# ---------- Sidebar ----------
+models = [m.model for m in ollama.list().models if "embed" not in m.model]
 model = st.sidebar.selectbox("Model", models)
-if st.sidebar.button("Clear chat"):
+use_docs = st.sidebar.toggle("📚 Answer from my documents (RAG)", value=True)
+top_k = st.sidebar.slider("Chunks to retrieve", 1, 8, 4)
+
+if st.sidebar.button("🔄 Re-index docs folder"):
+    with st.spinner("Indexing PDFs..."):
+        ingest()
+    st.sidebar.success("Done!")
+
+if st.sidebar.button("🗑️ Clear chat"):
     st.session_state.messages = []
 
-# Keep chat history
+# ---------- Helpers ----------
+def show_sources(sources):
+    with st.expander("📄 Sources"):
+        for i, s in enumerate(sources, 1):
+            st.markdown(f"**[{i}] {s['source']} - page {s['page']}**")
+            st.caption(s["text"][:300] + "...")
+
+
+def build_context(question):
+    """Search the vector DB and return (context_text, sources_list)."""
+    try:
+        hits = search(question, k=top_k)
+    except Exception:
+        return "", []
+    sources = [{"source": m["source"], "page": m["page"], "text": d}
+               for d, m, _ in hits]
+    context = "\n\n".join(
+        f"[{i}] ({s['source']}, page {s['page']})\n{s['text']}"
+        for i, s in enumerate(sources, 1)
+    )
+    return context, sources
+
+
+# ---------- Chat history ----------
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
-# Show old messages
 for m in st.session_state.messages:
     with st.chat_message(m["role"]):
         st.markdown(m["content"])
+        if m.get("sources"):
+            show_sources(m["sources"])
 
-# New message
+# ---------- New message ----------
 if prompt := st.chat_input("Ask something..."):
     st.session_state.messages.append({"role": "user", "content": prompt})
     with st.chat_message("user"):
         st.markdown(prompt)
 
+    context, sources = build_context(prompt) if use_docs else ("", [])
+
+    # Clean history (only role + content) + the new question with context
+    history = [{"role": m["role"], "content": m["content"]}
+               for m in st.session_state.messages[:-1]]
+    if context:
+        user_msg = f"Context:\n{context}\n\nQuestion: {prompt}"
+    else:
+        user_msg = prompt
+    chat_messages = [{"role": "system", "content": SYSTEM_PROMPT}] + history + \
+                    [{"role": "user", "content": user_msg}]
+
     def stream_reply():
-        for chunk in ollama.chat(model=model,
-                                 messages=st.session_state.messages,
-                                 stream=True):
+        for chunk in ollama.chat(model=model, messages=chat_messages, stream=True):
             yield chunk["message"]["content"]
 
     with st.chat_message("assistant"):
         reply = st.write_stream(stream_reply())
-    st.session_state.messages.append({"role": "assistant", "content": reply})
+        if sources:
+            show_sources(sources)
+
+    st.session_state.messages.append(
+        {"role": "assistant", "content": reply, "sources": sources}
+    )
