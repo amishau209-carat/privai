@@ -19,6 +19,7 @@ MODEL_MAP = {
     "document": ["qwen2.5:7b", "llama3.2:3b"],   # follows "use only context" better
     "summary":  ["llama3.2:3b", "qwen2.5:7b"],   # small + fast is enough
     "general":  ["llama3.2:3b", "qwen2.5:7b"],
+    "agent":    ["qwen2.5:7b", "llama3.2:3b"],   # must support tool calling
 }
 
 CODE_RE = re.compile(

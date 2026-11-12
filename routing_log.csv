@@ -4,3 +4,4 @@ time,question,task,model,reason
 2026-11-13 02:20:27,Write a Python function to reverse a string,coding,qwen2.5-coder:7b,matched a coding keyword
 2026-11-13 02:21:59,Summarize this in 3 points: AI is changing how we work...,summary,llama3.2:3b,matched a summary keyword
 2026-11-13 02:22:57,What is photosynthesis?,general,llama3.2:3b,"no rule matched, small model classified it"
+2026-11-13 02:49:52,Call the read_file tool with filename ../app.py,document,qwen2.5:7b,"RAG is on, so it's a document question"
