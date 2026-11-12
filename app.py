@@ -1,6 +1,7 @@
 import streamlit as st
 import ollama
 from rag import search, ingest
+from router import route
 
 st.set_page_config(page_title="PrivAI", page_icon="🔒")
 st.title("🔒 PrivAI - Private Local Assistant")
@@ -14,8 +15,9 @@ SYSTEM_PROMPT = (
 )
 
 # ---------- Sidebar ----------
-models = [m.model for m in ollama.list().models if "embed" not in m.model]
-model = st.sidebar.selectbox("Model", models)
+available = [m.model for m in ollama.list().models if "embed" not in m.model]
+AUTO = "🤖 Auto (router)"
+choice = st.sidebar.selectbox("Model", [AUTO] + available)
 use_docs = st.sidebar.toggle("📚 Answer from my documents (RAG)", value=True)
 top_k = st.sidebar.slider("Chunks to retrieve", 1, 8, 4)
 
@@ -56,6 +58,8 @@ if "messages" not in st.session_state:
 
 for m in st.session_state.messages:
     with st.chat_message(m["role"]):
+        if m.get("route"):
+            st.caption(m["route"])
         st.markdown(m["content"])
         if m.get("sources"):
             show_sources(m["sources"])
@@ -66,15 +70,19 @@ if prompt := st.chat_input("Ask something..."):
     with st.chat_message("user"):
         st.markdown(prompt)
 
+    # Day 4: decide which model answers
+    if choice == AUTO:
+        task, model, reason = route(prompt, use_docs, available)
+        route_text = f"🧭 Router: **{task}** → `{model}` ({reason})"
+    else:
+        model = choice
+        route_text = f"🎛️ Manual: `{model}`"
+
     context, sources = build_context(prompt) if use_docs else ("", [])
 
-    # Clean history (only role + content) + the new question with context
     history = [{"role": m["role"], "content": m["content"]}
                for m in st.session_state.messages[:-1]]
-    if context:
-        user_msg = f"Context:\n{context}\n\nQuestion: {prompt}"
-    else:
-        user_msg = prompt
+    user_msg = f"Context:\n{context}\n\nQuestion: {prompt}" if context else prompt
     chat_messages = [{"role": "system", "content": SYSTEM_PROMPT}] + history + \
                     [{"role": "user", "content": user_msg}]
 
@@ -83,10 +91,12 @@ if prompt := st.chat_input("Ask something..."):
             yield chunk["message"]["content"]
 
     with st.chat_message("assistant"):
+        st.caption(route_text)
         reply = st.write_stream(stream_reply())
         if sources:
             show_sources(sources)
 
     st.session_state.messages.append(
-        {"role": "assistant", "content": reply, "sources": sources}
+        {"role": "assistant", "content": reply, "sources": sources,
+         "route": route_text}
     )
