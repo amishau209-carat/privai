@@ -4,10 +4,14 @@ Usage:
     python rag.py ingest              # index every PDF inside the docs/ folder
     python rag.py search "your question"   # test retrieval
 """
+import os
 import sys
 from pathlib import Path
 
+os.environ["ANONYMIZED_TELEMETRY"] = "False"   # no data leaves the machine
+
 import chromadb
+from chromadb.config import Settings
 import ollama
 from pypdf import PdfReader
 
@@ -17,7 +21,9 @@ DB_DIR = "db"                      # Chroma saves its data here
 CHUNK_SIZE = 800                   # characters per chunk
 OVERLAP = 150                      # characters shared between chunks
 
-client = chromadb.PersistentClient(path=DB_DIR)
+client = chromadb.PersistentClient(
+    path=DB_DIR, settings=Settings(anonymized_telemetry=False)
+)
 collection = client.get_or_create_collection(
     "docs", metadata={"hnsw:space": "cosine"}
 )

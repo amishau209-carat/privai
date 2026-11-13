@@ -20,6 +20,8 @@ available = [m.model for m in ollama.list().models if "embed" not in m.model]
 AUTO = "🤖 Auto (router)"
 choice = st.sidebar.selectbox("Model", [AUTO] + available)
 agent_mode = st.sidebar.toggle("🛠️ Agent mode (use tools)", value=False)
+defend = st.sidebar.toggle("🛡️ Defence mode (security guard)", value=True,
+                           disabled=not agent_mode)
 use_docs = st.sidebar.toggle("📚 Answer from my documents (RAG)", value=True,
                              disabled=agent_mode)
 top_k = st.sidebar.slider("Chunks to retrieve", 1, 8, 4)
@@ -53,7 +55,7 @@ def show_steps(steps):
         for i, s in enumerate(steps, 1):
             st.markdown(f"**{i}. `{s['tool']}`**")
             st.code(str(s["args"]), language="json")
-            st.caption(s["result"][:300])
+            st.caption(("⛔ " if s.get("blocked") else "") + s["result"][:300])
 
 
 def build_context(question):
@@ -101,7 +103,7 @@ if prompt := st.chat_input("Ask something..."):
         with st.chat_message("assistant"):
             st.caption(route_text)
             with st.spinner("Working with tools..."):
-                reply, steps = run_agent(model, prompt, history[-4:])
+                reply, steps = run_agent(model, prompt, history[-4:], defend=defend)
             st.markdown(reply)
             if steps:
                 show_steps(steps)
