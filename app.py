@@ -1,6 +1,8 @@
+from pathlib import Path
+
 import streamlit as st
 import ollama
-from rag import search, ingest
+from rag import search, ingest, index_file, list_sources, DOCS_DIR
 from router import route, pick_model
 from tools import run_agent, WORKSPACE
 
@@ -26,6 +28,31 @@ use_docs = st.sidebar.toggle("📚 Answer from my documents (RAG)", value=True,
                              disabled=agent_mode)
 top_k = st.sidebar.slider("Chunks to retrieve", 1, 8, 4)
 
+# Day 8: upload documents straight from the app
+st.sidebar.markdown("### 📥 Add documents")
+uploads = st.sidebar.file_uploader(
+    "PDF or image (scanned files are read with OCR)",
+    type=["pdf", "png", "jpg", "jpeg"], accept_multiple_files=True)
+if uploads and st.sidebar.button("➕ Add to knowledge base"):
+    bar = st.sidebar.progress(0.0, text="Starting...")
+    for n, up in enumerate(uploads, 1):
+        save_path = DOCS_DIR / Path(up.name).name        # keep only the file name
+        save_path.write_bytes(up.getbuffer())
+        index_file(save_path, progress=lambda p, t, n=n, name=up.name: bar.progress(
+            min((n - 1 + p / t) / len(uploads), 1.0), text=f"{name}: page {p}/{t}"))
+    bar.empty()
+    st.sidebar.success(f"Added {len(uploads)} file(s)")
+
+with st.sidebar.expander("📚 Indexed documents"):
+    try:
+        docs = list_sources()
+    except Exception:
+        docs = {}
+    if not docs:
+        st.caption("Nothing indexed yet.")
+    for name, info in docs.items():
+        st.caption(f"{'🔍 ' if info['ocr'] else '📄 '}{name} ({info['chunks']} chunks)")
+
 if st.sidebar.button("🔄 Re-index docs folder"):
     with st.spinner("Indexing PDFs..."):
         ingest()
@@ -46,7 +73,8 @@ with st.sidebar.expander("📁 Workspace files"):
 def show_sources(sources):
     with st.expander("📄 Sources"):
         for i, s in enumerate(sources, 1):
-            st.markdown(f"**[{i}] {s['source']} - page {s['page']}**")
+            tag = " 🔍 OCR" if s.get("ocr") else ""
+            st.markdown(f"**[{i}] {s['source']} - page {s['page']}**{tag}")
             st.caption(s["text"][:300] + "...")
 
 
@@ -64,7 +92,8 @@ def build_context(question):
         hits = search(question, k=top_k)
     except Exception:
         return "", []
-    sources = [{"source": m["source"], "page": m["page"], "text": d}
+    sources = [{"source": m["source"], "page": m["page"], "text": d,
+                "ocr": bool(m.get("ocr"))}
                for d, m, _ in hits]
     context = "\n\n".join(
         f"[{i}] ({s['source']}, page {s['page']})\n{s['text']}"

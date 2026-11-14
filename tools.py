@@ -37,7 +37,7 @@ def list_files() -> str:
 
 
 def read_file(filename: str) -> str:
-    """Read a file from the workspace (txt, md, csv, pdf or docx).
+    """Read a file from the workspace (txt, md, csv, pdf, docx, or an image/scanned PDF via OCR).
 
     Args:
         filename: Name of the file inside the workspace, e.g. notes.txt
@@ -47,8 +47,15 @@ def read_file(filename: str) -> str:
         if not path.exists():
             return f"Error: {filename} does not exist."
         ext = path.suffix.lower()
-        if ext == ".pdf":
+        if ext in (".png", ".jpg", ".jpeg"):
+            from ocr import ocr_image
+            text = ocr_image(path)
+        elif ext == ".pdf":
             text = "\n".join(p.extract_text() or "" for p in PdfReader(path).pages)
+            if len(text.strip()) < 50:               # scanned PDF -> use OCR
+                from ocr import ocr_pdf_page, pdf_page_count
+                pages = min(pdf_page_count(path), 5)
+                text = "\n".join(ocr_pdf_page(path, i) for i in range(pages))
         elif ext == ".docx":
             text = "\n".join(p.text for p in Document(path).paragraphs)
         else:

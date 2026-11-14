@@ -5,3 +5,6 @@ pypdf
 python-docx
 openpyxl
 psutil
+rapidocr-onnxruntime
+pypdfium2
+pillow
